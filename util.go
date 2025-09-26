@@ -5,16 +5,25 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"syscall"
 )
 
-func IsPortAvailable(port int) bool {
+func IsPortAvailable(port int) (bool, error) {
 	addr := fmt.Sprintf(":%d", port)
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
-		return false
+		// 判断是否是端口被占用
+		if errors.Is(err, syscall.EADDRINUSE) {
+			return false, nil
+		}
+		// 其他错误
+		return false, err
 	}
-	_ = l.Close()
-	return true
+	err = l.Close()
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func GetMacAddrs() ([]string, error) {
