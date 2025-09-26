@@ -7,6 +7,16 @@ import (
 	"strings"
 )
 
+func IsPortAvailable(port int) bool {
+	addr := fmt.Sprintf(":%d", port)
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return false
+	}
+	_ = l.Close()
+	return true
+}
+
 func GetMacAddrs() ([]string, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
