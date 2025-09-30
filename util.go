@@ -4,28 +4,86 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"syscall"
 )
 
 func IsPortAvailable(port int) (bool, error) {
-	addr := fmt.Sprintf(":%d", port)
-	l, err := net.Listen("tcp", addr)
+	addrs, err := net.InterfaceAddrs()
 	if err != nil {
-		// 判断是否是端口被占用
-		if errors.Is(err, syscall.EADDRINUSE) {
+		return false, err
+	}
+
+	for _, addr := range addrs {
+		var ip net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		// 只检测 IPv4 和 IPv6 的可用地址
+		if ip == nil {
+			continue
+		}
+
+		l, err := net.Listen("tcp", net.JoinHostPort(ip.String(), fmt.Sprintf("%d", port)))
+		if err != nil {
+			if isAddrInUseErr(err) {
+				return false, nil // 已经被占用
+			}
+			if !isAddrNotAvailableErr(err) {
+				return false, err // 其他错误
+			}
+		} else {
+			err = l.Close()
+			if err != nil {
+				return false, err
+			}
+		}
+	}
+
+	// 还要检测 0.0.0.0 绑定情况
+	l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		if isAddrInUseErr(err) {
 			return false, nil
 		}
-		// 其他错误
-		return false, err
+		if !isAddrNotAvailableErr(err) {
+			return false, err
+		}
+	} else {
+		err = l.Close()
+		if err != nil {
+			return false, err
+		}
 	}
-	err = l.Close()
-	if err != nil {
-		return false, err
-	}
+
 	return true, nil
 }
 
+func isAddrInUseErr(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		var sysErr *os.SyscallError
+		if errors.As(opErr.Err, &sysErr) {
+			return errors.Is(sysErr.Err, syscall.EADDRINUSE)
+		}
+	}
+	return false
+}
+
+func isAddrNotAvailableErr(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		var sysErr *os.SyscallError
+		if errors.As(opErr.Err, &sysErr) {
+			return errors.Is(sysErr.Err, syscall.EADDRNOTAVAIL)
+		}
+	}
+	return false
+}
 func GetMacAddrs() ([]string, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
